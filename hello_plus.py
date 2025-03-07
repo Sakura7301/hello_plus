@@ -24,7 +24,7 @@ class HelloPlus(Plugin):
     group_welc_prompt = "请你随机使用一种风格说一句问候语来欢迎新用户\"{nickname}\"加入群聊。"
     group_exit_prompt = "请你随机使用一种风格介绍你自己，并告诉用户输入#help可以查看帮助信息。"
     patpat_prompt = "请你随机使用一种风格跟其他群用户说他违反规则\"{nickname}\"退出群聊。"
-    redirect_link = "https://mp.weixin.qq.com/s/k03Gw_7aKoAKrJZlz7fXzg"
+    redirect_link = "https://baike.baidu.com/item/welcome/2135227"
     def __init__(self):
         super().__init__()
         try:
@@ -73,13 +73,20 @@ class HelloPlus(Plugin):
                     return
             print('----welcome----')
             try:
+                import time
+                time.sleep(2)
                 qm,imgurl=self.get_info(msg)
                 if qm!=None or imgurl!=None:
-                    self.welcome(msg,qm,imgurl)
-                    e_context.action = EventAction.BREAK  # 事件结束，并跳过处理context的默认逻辑
-                    return
+                    ret=self.welcome(msg,qm,imgurl)
+                    if ret!= 200:
+                        e_context["context"].type = ContextType.TEXT
+                        e_context["context"].content = self.group_welc_prompt.format(nickname=msg.actual_user_nickname)
+                        e_context.action = EventAction.BREAK  # 事件结束，进入默认处理逻辑
+                    time.sleep(2)
+                    e_context["context"].type = ContextType.TEXT
+                    e_context["context"].content = self.group_welc_prompt.format(nickname=msg.actual_user_nickname)
+                    e_context.action = EventAction.BREAK
                 else:
-
                     e_context["context"].type = ContextType.TEXT
                     e_context["context"].content = self.group_welc_prompt.format(nickname=msg.actual_user_nickname)
                     e_context.action = EventAction.BREAK  # 事件结束，进入默认处理逻辑
@@ -159,7 +166,7 @@ class HelloPlus(Plugin):
         import requests
         import json
         from datetime import datetime
-        url = f"{self.base_url}/message/postAppMsg"
+        post_url = f"{self.base_url}/message/postAppMsg"
         now = datetime.now().strftime("%Y年%m月%d日 %H时%M分%S秒")
         url=self.redirect_link
         payload = json.dumps({
@@ -181,11 +188,14 @@ class HelloPlus(Plugin):
                '</weappinfo><websearch /></appmsg>'
            )
         })
-        response = requests.request("POST", url, data=payload, headers=self.headers)
+        response = requests.request("POST", post_url, data=payload, headers=self.headers)
+
+        return response.json()['ret']
     
     def get_info(self,msg):
         import requests
         import json
+        print('----get_info----')
         wxid=self.get_list(msg)
         if wxid==None:
             return None
@@ -197,8 +207,10 @@ class HelloPlus(Plugin):
             ]
         })
         data=requests.request("POST", f"{self.base_url}/group/getChatroomMemberDetail", data=payload, headers=self.headers).json()
+        print('----get_info----',data["data"][0]["signature"],data["data"][0]["smallHeadImgUrl"])
         return data["data"][0]["signature"],data["data"][0]["smallHeadImgUrl"]
     def get_list(self,msg):
+        print('----get_list----')
         import requests
         import json
         payload = json.dumps({
@@ -211,5 +223,5 @@ class HelloPlus(Plugin):
         for member in data["data"]["memberList"]:
             if member["nickName"] == msg.actual_user_nickname:
                 wxid=member["wxid"]
-
+        print('----get_list----',wxid)
         return wxid  
