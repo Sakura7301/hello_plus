@@ -212,6 +212,7 @@ class HelloPlus(Plugin):
                     reply.content = "没权限啊"
                     e_context["reply"] = reply
                     e_context.action = EventAction.BREAK_PASS
+                    return
                 group_id = msg.other_user_id
                 if group_id in self.monitoring_groups:
                     self.monitoring_groups.remove(group_id)
