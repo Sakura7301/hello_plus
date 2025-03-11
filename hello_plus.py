@@ -167,8 +167,7 @@ class HelloPlus(Plugin):
             reply = self.create_reply(ReplyType.TEXT, reply_cont)
             e_context["reply"] = reply
             e_context.action = EventAction.BREAK_PASS 
-        if e_context["context"]["isgroup"]:
-            if content =='查看监控群列表':
+        if content =='查看监控群列表':
                 if not self.is_admin(user_id):
                     reply = Reply()
                     reply.type = ReplyType.TEXT
@@ -189,6 +188,8 @@ class HelloPlus(Plugin):
                 e_context["reply"] = reply
                 e_context.action = EventAction.BREAK_PASS
                 return
+        if e_context["context"]["isgroup"]:
+            
             if content =='开启退群监控':
                 if not self.is_admin(user_id):
                     reply = Reply()
@@ -211,7 +212,6 @@ class HelloPlus(Plugin):
                     reply.content = "没权限啊"
                     e_context["reply"] = reply
                     e_context.action = EventAction.BREAK_PASS
-                    return
                 group_id = msg.other_user_id
                 if group_id in self.monitoring_groups:
                     self.monitoring_groups.remove(group_id)
