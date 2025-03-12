@@ -31,6 +31,8 @@ class HelloPlus(Plugin):
     welc_text = False
     auth_token = "12345679"
     admin_user = set()
+    group_names=['群聊1','群聊2']
+    ql_list = {}
     def __init__(self):
         super().__init__()
         try:
@@ -48,6 +50,7 @@ class HelloPlus(Plugin):
             self.sleep_time=self.config.get("sleep_time", self.sleep_time)
             self.auth_token=self.config.get("auth_token", self.auth_token)
             self.welc_text=self.config.get("welc_text", self.welc_text)
+            self.group_names=self.config.get("group_names", self.group_names)
             self.appid = conf().get("gewechat_app_id", "")
             self.gewetk = conf().get("gewechat_token", "")
             self.base_url = conf().get("gewechat_base_url")
@@ -61,6 +64,12 @@ class HelloPlus(Plugin):
                 'X-GEWE-TOKEN': self.gewetk,
                 'Content-Type': 'application/json'
             }
+            try:
+                self.get_group_list()
+               
+                logger.info(f"[HelloPlus]默认群聊监控开启成功")
+            except Exception as e:
+                logger.error(f"[HelloPlus]默认群聊监控开启失败：{e}")
             logger.info("[HelloPlus] inited")
             self.handlers[Event.ON_HANDLE_CONTEXT] = self.on_handle_context
         except Exception as e:
@@ -177,6 +186,14 @@ class HelloPlus(Plugin):
                     return
                 # 获取监控群列表
                 # 从self.group_members获取每个群的成员数量
+                
+                if len(self.group_members.keys())==0:
+                    reply = Reply()
+                    reply.type = ReplyType.TEXT
+                    reply.content = "监控群列表为空"
+                    e_context["reply"] = reply
+                    e_context.action = EventAction.BREAK_PASS
+                    return
                 group_member_count = {}
                 for group_id, members in self.group_members.items():
                     group_member_count[group_id] = len(members)
@@ -188,6 +205,66 @@ class HelloPlus(Plugin):
                 e_context["reply"] = reply
                 e_context.action = EventAction.BREAK_PASS
                 return
+        if content.startswith("开启监控"):
+            if e_context["context"]["isgroup"]:
+                reply_cont="不支持群聊开启"
+                reply = self.create_reply(ReplyType.TEXT, reply_cont)
+                e_context["reply"] = reply
+                e_context.action = EventAction.BREAK_PASS 
+                return
+            if not self.is_admin(user_id):
+                    reply = Reply()
+                    reply.type = ReplyType.TEXT
+                    reply.content = "没权限啊"
+                    e_context["reply"] = reply
+                    e_context.action = EventAction.BREAK_PASS
+                    return
+            group_name=content[4:].strip()
+            ret,msg=self.start_monitor(group_name)
+            reply = Reply()
+            reply.type = ReplyType.TEXT
+            reply.content = msg
+            e_context["reply"] = reply
+            e_context.action = EventAction.BREAK_PASS
+        if content.startswith("关闭监控"):
+            group_name=content[4:].strip()
+            if e_context["context"]["isgroup"]:
+                reply_cont="不支持群聊关闭"
+                reply = self.create_reply(ReplyType.TEXT, reply_cont)
+                e_context["reply"] = reply
+                e_context.action = EventAction.BREAK_PASS 
+                return
+            if not self.is_admin(user_id):
+                    reply = Reply()
+                    reply.type = ReplyType.TEXT
+                    reply.content = "没权限啊"
+                    e_context["reply"] = reply
+                    e_context.action = EventAction.BREAK_PASS
+                    return
+            flag=True
+            for group_id, name in self.monitoring_groups_name.items():
+                if name == group_name:
+                    flag=False
+                    if group_id in self.monitoring_groups:
+                        self.monitoring_groups.remove(group_id)
+                        self.monitoring_groups_name.pop(group_id)
+                        reply = Reply()
+                        reply.type = ReplyType.TEXT
+                        reply.content = f"监控关闭成功: {group_name}"
+                        e_context["reply"] = reply
+                    else:
+                        reply = Reply()
+                        reply.type = ReplyType.TEXT
+                        reply.content = f"[{group_name}]未开启退群监控"
+                        e_context["reply"] = reply
+                    break
+            if flag:
+                reply = Reply()
+                reply.type = ReplyType.TEXT
+                reply.content = f"未找到群组：{group_name}"
+                e_context["reply"] = reply
+            e_context.action = EventAction.BREAK_PASS
+            return
         if e_context["context"]["isgroup"]:
             
             if content =='开启退群监控':
@@ -198,7 +275,7 @@ class HelloPlus(Plugin):
                     e_context["reply"] = reply
                     e_context.action = EventAction.BREAK_PASS
                     return
-                self.get_member_list(msg)
+                self.get_member_list(msg.other_user_id,msg.other_user_nickname)
                 reply = Reply()
                 reply.type = ReplyType.TEXT
                 reply.content = f"当前群[{msg.other_user_nickname}]已开启退群监控"
@@ -350,13 +427,9 @@ class HelloPlus(Plugin):
                 wxid=member["wxid"]
         print('----get_list----',wxid)
         return wxid  
-    def get_member_list(self, msg):
+    def get_member_list(self, other_user_id, other_user_nickname):
         """
         获取群成员列表并监控退群行为
-        Args:
-            msg: 消息对象,包含群id等信息
-        Returns:
-            list: 群成员列表,None表示获取失败
         """
         print('----get_member_list----')
         import requests
@@ -364,31 +437,40 @@ class HelloPlus(Plugin):
         import time
         import threading
         
+        # 清理已存在的监控线程
+        if other_user_id in self.monitor_threads:
+            # 从监控集合中移除
+            if other_user_id in self.monitoring_groups:
+                self.monitoring_groups.remove(other_user_id)
+            if other_user_id in self.monitoring_groups_name:
+                self.monitoring_groups_name.pop(other_user_id)
+            # 等待旧线程结束
+            if self.monitor_threads[other_user_id].is_alive():
+                time.sleep(self.sleep_time + 1)
+            # 清理线程记录
+            self.monitor_threads.pop(other_user_id)
+        
         def monitor_group(group_id):
-            
-            while group_id in self.monitoring_groups:  # 检查监控状态
+            while group_id in self.monitoring_groups:
                 try:
-                    # 构造请求参数
                     payload = json.dumps({
                         "appId": self.appid,
                         "chatroomId": group_id,
                     })
                     
-                    # 请求群成员列表
                     data = requests.request("POST", f"{self.base_url}/group/getChatroomMemberList", 
                                          data=payload, headers=self.headers).json()
                     
-                    # 检查请求是否成功
                     if data.get('ret') != 200:
+                        logger.error(f"[HelloPlus] Failed to get member list for group {group_id}: {data}")
+                        time.sleep(self.sleep_time)
                         continue
                         
                     current_members = data["data"]["memberList"]
                     
-                    # 如果是第一次获取,直接保存
                     if group_id not in self.group_members:
                         self.group_members[group_id] = current_members
                     else:
-                        # 对比新旧成员列表,找出退群成员
                         old_members = self.group_members[group_id]
                         old_wxids = {m["wxid"] for m in old_members}
                         new_wxids = {m["wxid"] for m in current_members}
@@ -396,34 +478,32 @@ class HelloPlus(Plugin):
                         left_members = old_wxids - new_wxids
                         if left_members:
                             for wxid in left_members:
-                                # 找到退群成员昵称
                                 member = next(m for m in old_members if m["wxid"] == wxid)
-                                print(f"用户 {member['nickName']} 退出了群聊")
-                               
-                                self.exit(group_id, member['smallHeadImgUrl'],member['nickName'])
+                                logger.info(f"[HelloPlus] User {member['nickName']} left group {group_id}")
+                                self.exit(group_id, member['smallHeadImgUrl'], member['nickName'])
                         
-                        # 更新本地群成员数据        
                         self.group_members[group_id] = current_members
-                    print(f"开始监控群 {group_id}")
+                    
                     self.memberList = current_members
-                    time.sleep(self.sleep_time)  # 每self.sleep_time
+                    time.sleep(self.sleep_time)
+                    
                 except Exception as e:
-                    print(f"监控群 {group_id} 异常: {e}")
-                    if group_id not in self.monitoring_groups:  # 如果已关闭监控则退出
+                    logger.error(f"[HelloPlus] Error monitoring group {group_id}: {e}")
+                    if group_id not in self.monitoring_groups:
                         break
                     time.sleep(self.sleep_time)
                     continue
-            print(f"停止监控群 {group_id}")
+                
+            logger.info(f"[HelloPlus] Stopped monitoring group {group_id}")
 
-        # 如果该群还没有监控线程,则创建新线程
-        if msg.other_user_id not in self.monitor_threads:
-            self.monitoring_groups.add(msg.other_user_id)  # 添加到监控集合
-            self.monitoring_groups_name[msg.other_user_id]=msg.other_user_nickname  # 添加到监控集合
-            t = threading.Thread(target=monitor_group, args=(msg.other_user_id,))
-            t.daemon = True
-            t.start()
-            self.monitor_threads[msg.other_user_id] = t
-            
+        # 启动新的监控线程
+        self.monitoring_groups.add(other_user_id)
+        self.monitoring_groups_name[other_user_id] = other_user_nickname
+        t = threading.Thread(target=monitor_group, args=(other_user_id,))
+        t.daemon = True
+        t.start()
+        self.monitor_threads[other_user_id] = t
+        
         return self.memberList
     def is_admin(self,wxid):
         return wxid in self.admin_user
@@ -439,3 +519,70 @@ class HelloPlus(Plugin):
         reply.type = reply_type
         reply.content = content
         return reply
+    def get_group_list(self):
+        import requests
+        import json
+        url = f"{self.base_url}/contacts/fetchContactsList"
+        
+        payload = json.dumps({
+           "appId": self.appid
+        })
+
+        response = requests.request("POST", url, data=payload, headers=self.headers)
+        response=response.json()
+        if response['ret']!=200:
+            return None
+        rooms=response['data']['chatrooms']
+        self.rooms=rooms
+        print(rooms)
+        self.get_group_info(rooms)
+    def get_group_info(self,rooms):
+        import requests
+        import json
+        import time
+        url = f"{self.base_url}/contacts/getDetailInfo"
+
+        payload = json.dumps({
+            "appId": self.appid,
+            "wxids": rooms
+        })
+
+        response = requests.request("POST", url, data=payload, headers=self.headers)
+        response=response.json()
+        if response['ret']!=200:
+            return None
+        datas=response['data']
+
+        for group_name in self.group_names:
+            found = False
+            for data in datas:
+                self.ql_list[data['userName']]=data['nickName']
+                if data['nickName'] == group_name:
+                    time.sleep(1)
+                    self.get_member_list(data['userName'], data['nickName'])
+                    found = True
+                    break
+            if not found:
+                print(f"群组 {group_name} 未找到")
+        
+        return self.ql_list  
+    def start_monitor(self, group_name):
+        try:
+            # 遍历self.ql_list找到group_name对应的group_id
+            for group_id, name in self.ql_list.items():
+                if name == group_name:
+                    # 找到匹配的群组,调用get_member_list
+                    try:
+                        self.get_member_list(group_id, group_name)
+                        logger.info(f"监控启动成功: {group_name}")
+                        return True, f"监控启动成功: {group_name}"
+                    except Exception as e:
+                        error_msg = f"启动群监控失败: {group_name} "
+                        logger.error(f"启动群监控失败 {str(e)}")
+                        return False, error_msg
+            
+            return False, f"未找到群组: {group_name}"
+        except Exception as e:
+            error_msg = f"启动监控时发生错误: {group_name}"
+            logger.error(f"[启动监控时发生错误] : {str(e)}")
+            return False, error_msg  

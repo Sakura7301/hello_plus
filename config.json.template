@@ -16,5 +16,6 @@
   "say_exit": "有缘再见",
   "sleep_time": 60,
   "auth_token":"12345679",
-  "welc_text":false
+  "welc_text":false,
+  "group_names":["测试bott","测试机器人"]
 }
