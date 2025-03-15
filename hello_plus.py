@@ -339,6 +339,9 @@ class HelloPlus(Plugin):
                         continue
 
                     current_members = data["data"]["memberList"]
+                    leave_members_name = []
+                    old_wxids = set()
+                    new_wxids = set()
 
                     if group_id not in self.group_members:
                         self.group_members[group_id] = current_members
@@ -346,15 +349,20 @@ class HelloPlus(Plugin):
                         old_members = self.group_members[group_id]
                         old_wxids = {m["wxid"] for m in old_members}
                         new_wxids = {m["wxid"] for m in current_members}
-
-                        left_members = old_wxids - new_wxids
-                        if left_members:
-                            for wxid in left_members:
+                        leave_members = old_wxids - new_wxids
+                        if leave_members:
+                            for wxid in leave_members:
                                 member = next(m for m in old_members if m["wxid"] == wxid)
                                 logger.info(f"[HelloPlus] User {member['nickName']} left group {group_id}")
                                 self.exit(group_id, member['smallHeadImgUrl'], member['nickName'])
+                                leave_members_name += [member['nickName']]
 
                         self.group_members[group_id] = current_members
+                    if leave_members_name:
+                        leave_str = f"退群成员：{', '.join(leave_members_name)}"
+                    else:
+                        leave_str = ""
+                    logger.info(f"[HelloPlus] {other_user_nickname}: {len(old_wxids)}/{len(new_wxids)} {leave_str}")
 
                     self.memberList = current_members
                     time.sleep(self.sleep_time)
@@ -418,7 +426,7 @@ class HelloPlus(Plugin):
             for data in data_info:
                 self.ql_list[data['userName']] = data['nickName']
                 if data['nickName'] == group_name:
-                    time.sleep(1)
+                    # time.sleep(1)
                     self.get_member_list(data['userName'], data['nickName'])
                     found = True
                     break
