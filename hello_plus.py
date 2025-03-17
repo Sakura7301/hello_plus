@@ -402,7 +402,11 @@ class HelloPlus(Plugin):
 
         self.monitoring_groups.add(other_user_id)
         self.monitoring_groups_name[other_user_id] = other_user_nickname
+<<<<<<< HEAD
         thread = threading.Thread(target=monitor_group, args=(other_user_id,), name=self.get_thread_name())
+=======
+        thread = threading.Thread(target=monitor_group, args=(other_user_id,))
+>>>>>>> 60a0de43f41c0bbdd9d3c52a7b1cd6164104b493
         thread.daemon = True
         thread.start()
         self.monitor_threads[other_user_id] = thread
