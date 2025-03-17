@@ -32,7 +32,7 @@ class HelloPlus(Plugin):
         self.monitoring_groups = set()  # 存储正在监控的群组ID
         self.monitoring_groups_name = {}  # 存储正在监控的群组name
         # 线程名前缀
-        self.thread_name_prefix = "HelloPlusThread_"
+        self.thread_name_prefix = "HelloPlusThread"
         # 线程计数
         self.thread_num = 0
 
@@ -87,9 +87,10 @@ class HelloPlus(Plugin):
         # 获取所有活动线程
         for thread in threading.enumerate():
             # 检查线程名
-            if "HelloPlusThread_" in thread.name: 
+            if "HelloPlusThread_" in thread.name:
                 # 回收线程
-                thread.join()
+                logger.warning(f"[HelloPlus] 检测到线程 {thread.name} 未关闭，正在回收...")
+                thread._stop()
 
     def on_handle_context(self, e_context: EventContext):
         """处理上下文事件"""
@@ -402,11 +403,7 @@ class HelloPlus(Plugin):
 
         self.monitoring_groups.add(other_user_id)
         self.monitoring_groups_name[other_user_id] = other_user_nickname
-<<<<<<< HEAD
         thread = threading.Thread(target=monitor_group, args=(other_user_id,), name=self.get_thread_name())
-=======
-        thread = threading.Thread(target=monitor_group, args=(other_user_id,))
->>>>>>> 60a0de43f41c0bbdd9d3c52a7b1cd6164104b493
         thread.daemon = True
         thread.start()
         self.monitor_threads[other_user_id] = thread
