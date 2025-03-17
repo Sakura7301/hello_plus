@@ -66,16 +66,16 @@ class HelloPlus(Plugin):
             # 检查线程是否关闭
             self.check_daemon()
 
-            # 初始化群组列表
-            self.check_thread = threading.Thread(target=self.get_group_list, name=self.get_thread_name())
-            self.check_thread.daemon = True
-            self.check_thread.start()
-
             logger.info("[HelloPlus] 初始化完成")
             self.handlers[Event.ON_HANDLE_CONTEXT] = self.on_handle_context
         except Exception as e:
             logger.error(f"[HelloPlus] 初始化异常：{e}")
             raise "[HelloPlus] init failed, ignore "
+        finally:
+            # 初始化群组列表
+            self.check_thread = threading.Thread(target=self.get_group_list, name=self.get_thread_name())
+            self.check_thread.daemon = True
+            self.check_thread.start()
 
     def get_thread_name(self):
         # 生成线程名并返回
@@ -423,7 +423,7 @@ class HelloPlus(Plugin):
 
     def get_group_list(self):
         """获取群组列表"""
-        time.sleep(3)
+        # time.sleep(3)
         url = f"{self.base_url}/contacts/fetchContactsList"
         payload = json.dumps({"appId": self.appid})
         response = requests.request("POST", url, data=payload, headers=self.headers)
