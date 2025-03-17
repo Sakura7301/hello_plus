@@ -60,8 +60,8 @@ class HelloPlus(Plugin):
             }
 
             # 初始化群组列表
-            self.get_group_list()
-
+            thread = threading.Thread(target=self.get_group_list)
+            thread.start()
             logger.info("[HelloPlus] 初始化完成")
             self.handlers[Event.ON_HANDLE_CONTEXT] = self.on_handle_context
         except Exception as e:
@@ -362,7 +362,8 @@ class HelloPlus(Plugin):
                         leave_str = f"退群成员：{', '.join(leave_members_name)}"
                     else:
                         leave_str = ""
-                    logger.info(f"[HelloPlus] {other_user_nickname}: {len(old_wxids)}/{len(new_wxids)} {leave_str}")
+                    if leave_members_name:
+                        logger.info(f"[HelloPlus] {other_user_nickname}: {len(old_wxids)}/{len(new_wxids)} {leave_str}")
 
                     self.memberList = current_members
                     time.sleep(self.sleep_time)
@@ -378,11 +379,11 @@ class HelloPlus(Plugin):
 
         self.monitoring_groups.add(other_user_id)
         self.monitoring_groups_name[other_user_id] = other_user_nickname
-        t = threading.Thread(target=monitor_group, args=(other_user_id,))
-        t.daemon = True
-        t.start()
-        self.monitor_threads[other_user_id] = t
-        logger.info(f"[HelloPlus] 监控启动成功: {other_user_nickname}")
+        thread = threading.Thread(target=monitor_group, args=(other_user_id,))
+        thread.daemon = True
+        thread.start()
+        self.monitor_threads[other_user_id] = thread
+        logger.debug(f"[HelloPlus] 监控启动成功: {other_user_nickname}")
         return self.memberList
 
     def is_admin(self, wxid):
@@ -398,17 +399,19 @@ class HelloPlus(Plugin):
 
     def get_group_list(self):
         """获取群组列表"""
+        time.sleep(3)
         url = f"{self.base_url}/contacts/fetchContactsList"
         payload = json.dumps({"appId": self.appid})
         response = requests.request("POST", url, data=payload, headers=self.headers)
         response_data = response.json()
 
         if response_data.get('ret') != 200:
-            return None
+            logger.error(f"[HelloPlus] Failed to get group list: {response_data}")
+            return
 
         rooms = response_data['data']['chatrooms']
         self.get_group_info(rooms)
-        return self.ql_list
+        return
 
     def get_group_info(self, rooms):
         """获取群组信息"""
