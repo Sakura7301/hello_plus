@@ -31,6 +31,10 @@ class HelloPlus(Plugin):
         self.monitor_threads = {}  # 存储监控线程
         self.monitoring_groups = set()  # 存储正在监控的群组ID
         self.monitoring_groups_name = {}  # 存储正在监控的群组name
+        # 线程名前缀
+        self.thread_name_prefix = "HelloPlusThread_"
+        # 线程计数
+        self.thread_num = 0
 
         try:
             self.config = super().load_config()
@@ -59,14 +63,33 @@ class HelloPlus(Plugin):
                 'Content-Type': 'application/json'
             }
 
+            # 检查线程是否关闭
+            self.check_daemon()
+
             # 初始化群组列表
-            self.get_group_list()
+            self.check_thread = threading.Thread(target=self.get_group_list, name=self.get_thread_name())
+            self.check_thread.daemon = True
+            self.check_thread.start()
 
             logger.info("[HelloPlus] 初始化完成")
             self.handlers[Event.ON_HANDLE_CONTEXT] = self.on_handle_context
         except Exception as e:
             logger.error(f"[HelloPlus] 初始化异常：{e}")
             raise "[HelloPlus] init failed, ignore "
+
+    def get_thread_name(self):
+        # 生成线程名并返回
+        thread_name = f"{self.thread_name_prefix}_{self.thread_num}"
+        self.thread_num += 1
+        return thread_name
+
+    def check_daemon(self):
+        # 获取所有活动线程
+        for thread in threading.enumerate():
+            # 检查线程名
+            if "HelloPlusThread_" in thread.name: 
+                # 回收线程
+                thread.join()
 
     def on_handle_context(self, e_context: EventContext):
         """处理上下文事件"""
@@ -362,7 +385,8 @@ class HelloPlus(Plugin):
                         leave_str = f"退群成员：{', '.join(leave_members_name)}"
                     else:
                         leave_str = ""
-                    logger.info(f"[HelloPlus] {other_user_nickname}: {len(old_wxids)}/{len(new_wxids)} {leave_str}")
+                    if leave_members_name:
+                        logger.info(f"[HelloPlus] {other_user_nickname}: {len(old_wxids)}/{len(new_wxids)} {leave_str}")
 
                     self.memberList = current_members
                     time.sleep(self.sleep_time)
@@ -378,11 +402,11 @@ class HelloPlus(Plugin):
 
         self.monitoring_groups.add(other_user_id)
         self.monitoring_groups_name[other_user_id] = other_user_nickname
-        t = threading.Thread(target=monitor_group, args=(other_user_id,))
-        t.daemon = True
-        t.start()
-        self.monitor_threads[other_user_id] = t
-        logger.info(f"[HelloPlus] 监控启动成功: {other_user_nickname}")
+        thread = threading.Thread(target=monitor_group, args=(other_user_id,), name=self.get_thread_name())
+        thread.daemon = True
+        thread.start()
+        self.monitor_threads[other_user_id] = thread
+        logger.debug(f"[HelloPlus] 监控启动成功: {other_user_nickname}")
         return self.memberList
 
     def is_admin(self, wxid):
@@ -398,17 +422,19 @@ class HelloPlus(Plugin):
 
     def get_group_list(self):
         """获取群组列表"""
+        time.sleep(3)
         url = f"{self.base_url}/contacts/fetchContactsList"
         payload = json.dumps({"appId": self.appid})
         response = requests.request("POST", url, data=payload, headers=self.headers)
         response_data = response.json()
 
         if response_data.get('ret') != 200:
-            return None
+            logger.error(f"[HelloPlus] Failed to get group list: {response_data}")
+            return
 
         rooms = response_data['data']['chatrooms']
         self.get_group_info(rooms)
-        return self.ql_list
+        return
 
     def get_group_info(self, rooms):
         """获取群组信息"""
